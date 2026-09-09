@@ -109,7 +109,6 @@ export const slashCommands = [
   new SlashCommandBuilder()
     .setName('server-config')
     .setDescription('Configure the SA-MP / Open.MP server to monitor (Admin only)')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((sub) => sub.setName('set').setDescription('Set server IP and port via modal'))
     .addSubcommand((sub) => sub.setName('status').setDescription('View current server configuration'))
     .addSubcommand((sub) => sub.setName('test').setDescription('Test connection to the configured server'))
@@ -119,7 +118,6 @@ export const slashCommands = [
   new SlashCommandBuilder()
     .setName('org-config')
     .setDescription('Configure organization branding and channel settings (Admin only)')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((sub) => sub.setName('branding').setDescription('Set org name, icon, member label, dashboard title'))
     .addSubcommand((sub) => sub.setName('channels').setDescription('Set log channel, staff role, ticket log channel'))
     .addSubcommand((sub) => sub.setName('view').setDescription('View current organization settings')),
@@ -193,8 +191,7 @@ export const slashCommands = [
   // ── Tickets ──────────────────────────────────────────────────────────────────
   new SlashCommandBuilder()
     .setName('ticket-setup')
-    .setDescription('Post the ticket panel in this channel (Admin only)')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    .setDescription('Post the ticket panel in this channel (Admin only)'),
 ];
 
 // ─── Register commands ─────────────────────────────────────────────────────────
@@ -226,6 +223,11 @@ export async function registerSlashCommands(): Promise<void> {
 
 // ─── Admin permission check ────────────────────────────────────────────────────
 function checkAdminPermission(interaction: ChatInputCommandInteraction): boolean {
+  // Guild owner is ALWAYS permitted
+  if (interaction.guild?.ownerId === interaction.user.id) {
+    return true;
+  }
+
   const adminRoleId = getSetting(SETTING_KEYS.BOT_ADMIN_ROLE_ID) || config.adminRoleId;
 
   if (!adminRoleId) {
@@ -434,9 +436,9 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
         return;
       }
 
-      const status = tracker.getLastStatus();
+      const status = tracker.getLastStatus() || (tracker.isServerConfigured() ? await tracker.checkNow() : null);
       const payload = buildDashboard(status, 1);
-      await interaction.reply({ embeds: payload.embeds });
+      await interaction.reply({ embeds: payload.embeds, components: payload.components });
       return;
     }
 
@@ -486,10 +488,13 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
       await interaction.reply({ embeds: [buildPeriodEmbed('monthly')] });
       return;
     }
-  } catch (err) {
+  } catch (err: any) {
     logger.error('Commands', `Error handling command ${commandName}`, err);
+    const errorMsg = err?.message || 'An unexpected error occurred while executing the command.';
     if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'An unexpected error occurred while executing the command.', ephemeral: true });
+      await interaction.reply({ content: `❌ ${errorMsg}`, ephemeral: true }).catch(() => {});
+    } else if (interaction.deferred) {
+      await interaction.editReply({ content: `❌ ${errorMsg}` }).catch(() => {});
     }
   }
 }

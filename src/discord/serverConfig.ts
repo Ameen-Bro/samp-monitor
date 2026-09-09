@@ -18,6 +18,7 @@ import { querySampServer } from '../samp/query';
 import { setServerConfig, removeServerConfig, getServerConfig } from '../database/settings';
 import { tracker } from '../tracking/tracker';
 import { logger } from '../utils/logger';
+import dns from 'dns';
 
 // ─── Modal IDs ─────────────────────────────────────────────────────────────────
 export const SERVER_CONFIG_MODAL_ID = 'modal_server_config';
@@ -163,9 +164,29 @@ export async function handleServerConfigCommand(interaction: ChatInputCommandInt
 export async function handleServerConfigModal(interaction: ModalSubmitInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
-  const ip = interaction.fields.getTextInputValue('server_ip').trim();
-  const portRaw = interaction.fields.getTextInputValue('server_port').trim();
+  let ip = interaction.fields.getTextInputValue('server_ip').trim();
+  let portRaw = interaction.fields.getTextInputValue('server_port').trim();
   const intervalRaw = interaction.fields.getTextInputValue('query_interval').trim();
+
+  // If user entered IP:port in the IP field (e.g. 139.99.52.211:7777)
+  if (ip.includes(':')) {
+    const parts = ip.split(':');
+    ip = parts[0].trim();
+    if (!portRaw || portRaw === '7777') {
+      portRaw = parts[1].trim();
+    }
+  }
+
+  // Resolve hostname if a domain name was provided instead of IPv4
+  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
+    try {
+      const lookup = await dns.promises.lookup(ip);
+      ip = lookup.address;
+    } catch {
+      await interaction.editReply({ content: `❌ Could not resolve hostname "${ip}". Please enter a valid IPv4 address.` });
+      return;
+    }
+  }
 
   const port = parseInt(portRaw, 10);
   const interval = Math.max(10, parseInt(intervalRaw || '30', 10));
@@ -186,7 +207,7 @@ export async function handleServerConfigModal(interaction: ModalSubmitInteractio
         content:
           `❌ **Could not connect to ${ip}:${port}**\n\n` +
           `Error: ${result.error || 'Timeout'}\n\n` +
-          `Please verify the IP and port are correct and the server is online, then try again.`,
+          `Please verify the server is running and reachable over UDP port ${port}, then try again.`,
       });
       return;
     }
