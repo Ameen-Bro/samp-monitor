@@ -125,9 +125,9 @@ export const slashCommands = [
   // ── Music ────────────────────────────────────────────────────────────────────
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Play a song or search YouTube')
+    .setDescription('Play a song from YouTube, Spotify, SoundCloud, or keyword search')
     .addStringOption((opt) =>
-      opt.setName('query').setDescription('YouTube URL, playlist URL, or search query').setRequired(true)
+      opt.setName('query').setDescription('Song name, YouTube URL, Spotify link, or SoundCloud link').setRequired(true)
     ),
 
   new SlashCommandBuilder()

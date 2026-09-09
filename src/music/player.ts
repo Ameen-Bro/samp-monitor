@@ -12,6 +12,7 @@ import {
 import { GuildMember } from 'discord.js';
 import playdl from 'play-dl';
 import { GuildMusicState, QueueTrack, LoopMode } from './types';
+import { isSpotifyUrl, getSpotifyType, resolveSpotifyTrack, resolveSpotifyPlaylist } from './spotify';
 import { logger } from '../utils/logger';
 import { getSetting, setSetting, deleteSetting, SETTING_KEYS } from '../database/settings';
 
@@ -75,6 +76,10 @@ function getPlayer(guildId: string): AudioPlayer {
 }
 
 function setupPlayerListeners(guildId: string, player: AudioPlayer): void {
+  player.on(AudioPlayerStatus.Playing, () => {
+    logger.info('Music', `Audio playback started in guild ${guildId}`);
+  });
+
   player.on(AudioPlayerStatus.Idle, () => {
     const state = getState(guildId);
 
@@ -104,48 +109,54 @@ async function joinChannel(member: GuildMember, guildId: string): Promise<VoiceC
   const voiceChannel = member.voice.channel;
   if (!voiceChannel) return null;
 
-  const existing = getVoiceConnection(guildId);
-  if (existing) {
-    const state = getState(guildId);
-    state.voiceChannelId = voiceChannel.id;
-    return existing;
-  }
+  let connection = getVoiceConnection(guildId);
+  const player = getPlayer(guildId);
 
-  try {
-    const connection = joinVoiceChannel({
+  if (!connection || connection.state.status === VoiceConnectionStatus.Destroyed) {
+    connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId,
       adapterCreator: member.guild.voiceAdapterCreator,
+      selfDeaf: true,
     });
 
-    await entersState(connection, VoiceConnectionStatus.Ready, 10_000);
-    const state = getState(guildId);
-    state.voiceChannelId = voiceChannel.id;
+    try {
+      await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
+      logger.info('Music', `Voice connection Ready in guild ${guildId}`);
+    } catch (err) {
+      logger.error('Music', `Voice connection failed to reach Ready: ${err}`);
+      connection.destroy();
+      return null;
+    }
 
     connection.on(VoiceConnectionStatus.Disconnected, async () => {
       const st = getState(guildId);
       if (!st.is247) {
         try {
           await Promise.race([
-            entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
-            entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+            entersState(connection!, VoiceConnectionStatus.Signalling, 5_000),
+            entersState(connection!, VoiceConnectionStatus.Connecting, 5_000),
           ]);
         } catch {
-          connection.destroy();
+          connection?.destroy();
           st.currentTrack = null;
           st.queue = [];
           st.voiceChannelId = null;
         }
       }
     });
-
-    const player = getPlayer(guildId);
-    connection.subscribe(player);
-    return connection;
-  } catch (err) {
-    logger.error('Music', `Failed to join voice channel: ${err}`);
-    return null;
+  } else if (connection.joinConfig.channelId !== voiceChannel.id) {
+    connection.rejoin({
+      channelId: voiceChannel.id,
+      selfDeaf: true,
+      selfMute: false,
+    });
   }
+
+  const state = getState(guildId);
+  state.voiceChannelId = voiceChannel.id;
+  connection.subscribe(player);
+  return connection;
 }
 
 // ─── Play Next Track (with Dual-Provider Fallback) ──────────────────────────────
@@ -200,6 +211,49 @@ async function playNext(guildId: string): Promise<void> {
   }
 }
 
+// ─── Search helper (YouTube with SoundCloud fallback) ──────────────────────────
+async function searchSingleTrack(query: string, requesterTag: string, requesterId: string): Promise<QueueTrack | null> {
+  try {
+    const results = await playdl.search(query, { limit: 1 });
+    if (results && results.length > 0) {
+      const r = results[0];
+      return {
+        url: r.url,
+        title: r.title ?? query,
+        duration: formatDuration(r.durationInSec ?? 0),
+        durationSeconds: r.durationInSec ?? 0,
+        requestedBy: requesterTag,
+        requestedByUserId: requesterId,
+        thumbnail: r.thumbnails?.[0]?.url,
+      };
+    }
+  } catch {
+    // YouTube search failed/rate-limited
+  }
+
+  // Fallback to SoundCloud search
+  try {
+    await ensureSoundCloud();
+    const scResults = await playdl.search(query, { source: { soundcloud: 'tracks' }, limit: 1 });
+    if (scResults && scResults.length > 0) {
+      const sc = scResults[0];
+      return {
+        url: sc.url,
+        title: sc.name ?? query,
+        duration: formatDuration(sc.durationInSec ?? 0),
+        durationSeconds: sc.durationInSec ?? 0,
+        requestedBy: requesterTag,
+        requestedByUserId: requesterId,
+        thumbnail: sc.thumbnail,
+      };
+    }
+  } catch {
+    // SoundCloud search failed
+  }
+
+  return null;
+}
+
 // ─── Public API ────────────────────────────────────────────────────────────────
 
 export interface PlayResult {
@@ -209,23 +263,101 @@ export interface PlayResult {
   position?: number;
 }
 
-export async function playTrack(member: GuildMember, url: string): Promise<PlayResult> {
+export async function playTrack(member: GuildMember, input: string): Promise<PlayResult> {
   const guildId = member.guild.id;
 
   if (!member.voice.channel) {
     return { success: false, error: 'You must be connected to a voice channel to play music.' };
   }
 
-  // Validate and get track info
+  const cleanInput = input.trim();
+
+  // ── 1. Spotify URL Handling ───────────────────────────────────────────────────
+  if (isSpotifyUrl(cleanInput)) {
+    const spType = getSpotifyType(cleanInput);
+
+    if (spType === 'track') {
+      const spTrack = await resolveSpotifyTrack(cleanInput);
+      if (!spTrack) {
+        return { success: false, error: 'Could not retrieve Spotify track details. Ensure the link is public.' };
+      }
+
+      const foundTrack = await searchSingleTrack(spTrack.searchQuery, member.user.tag, member.user.id);
+      if (!foundTrack) {
+        return { success: false, error: `Could not find audio for Spotify track: **${spTrack.title}**` };
+      }
+
+      const connection = await joinChannel(member, guildId);
+      if (!connection) {
+        return { success: false, error: 'Could not connect to your voice channel. Check bot permissions!' };
+      }
+
+      const state = getState(guildId);
+      state.queue.push(foundTrack);
+      const position = state.queue.length;
+
+      if (!state.currentTrack) {
+        await playNext(guildId);
+        return { success: true, track: foundTrack, position: 0 };
+      }
+      return { success: true, track: foundTrack, position };
+    }
+
+    if (spType === 'playlist' || spType === 'album') {
+      const spPlaylist = await resolveSpotifyPlaylist(cleanInput);
+      if (!spPlaylist || spPlaylist.tracks.length === 0) {
+        return { success: false, error: 'Could not load Spotify playlist/album. Ensure the link is public.' };
+      }
+
+      const connection = await joinChannel(member, guildId);
+      if (!connection) {
+        return { success: false, error: 'Could not connect to your voice channel. Check bot permissions!' };
+      }
+
+      const state = getState(guildId);
+      let addedCount = 0;
+
+      for (const t of spPlaylist.tracks) {
+        const found = await searchSingleTrack(t.searchQuery, member.user.tag, member.user.id);
+        if (found) {
+          state.queue.push(found);
+          addedCount++;
+        }
+      }
+
+      if (addedCount === 0) {
+        return { success: false, error: 'Could not find audio for tracks in this Spotify collection.' };
+      }
+
+      if (!state.currentTrack) {
+        await playNext(guildId);
+      }
+
+      return {
+        success: true,
+        track: {
+          url: cleanInput,
+          title: `Spotify: ${spPlaylist.name} (${addedCount} tracks)`,
+          duration: '',
+          durationSeconds: 0,
+          requestedBy: member.user.tag,
+          requestedByUserId: member.user.id,
+        },
+        position: state.queue.length,
+      };
+    }
+  }
+
+  // ── 2. YouTube & SoundCloud URL / Search Handling ─────────────────────────────
   let trackInfo: QueueTrack | null = null;
 
   try {
-    const validated = await playdl.validate(url);
+    const validated = await playdl.validate(cleanInput);
 
     if (validated === 'yt_video') {
-      const info = await playdl.video_info(url);
+      const info = await playdl.video_info(cleanInput);
       trackInfo = {
-        url,
+        url: cleanInput,
         title: info.video_details.title ?? 'Unknown',
         duration: formatDuration(info.video_details.durationInSec ?? 0),
         durationSeconds: info.video_details.durationInSec ?? 0,
@@ -234,10 +366,10 @@ export async function playTrack(member: GuildMember, url: string): Promise<PlayR
         thumbnail: info.video_details.thumbnails?.[0]?.url,
       };
     } else if (validated === 'yt_playlist') {
-      const playlistInfo = await playdl.playlist_info(url, { incomplete: true });
+      const playlistInfo = await playdl.playlist_info(cleanInput, { incomplete: true });
       const playlistVideos: any[] = (playlistInfo as any)?.videos ?? [];
       if (!playlistInfo || playlistVideos.length === 0) {
-        return { success: false, error: 'Could not load playlist or playlist is empty.' };
+        return { success: false, error: 'Could not load YouTube playlist or playlist is empty.' };
       }
       const state = getState(guildId);
       const connection = await joinChannel(member, guildId);
@@ -259,14 +391,14 @@ export async function playTrack(member: GuildMember, url: string): Promise<PlayR
       }
       return {
         success: true,
-        track: { url, title: `Playlist (${playlistVideos.length} tracks)`, duration: '', durationSeconds: 0, requestedBy: member.user.tag, requestedByUserId: member.user.id },
+        track: { url: cleanInput, title: `YouTube Playlist (${playlistVideos.length} tracks)`, duration: '', durationSeconds: 0, requestedBy: member.user.tag, requestedByUserId: member.user.id },
         position: state.queue.length,
       };
     } else if (validated === 'so_track') {
       await ensureSoundCloud();
-      const scInfo = await playdl.soundcloud(url);
+      const scInfo = await playdl.soundcloud(cleanInput);
       trackInfo = {
-        url: (scInfo as any).url || url,
+        url: (scInfo as any).url || cleanInput,
         title: (scInfo as any).name || 'Unknown',
         duration: formatDuration(Math.floor(((scInfo as any).durationInMs || 0) / 1000)),
         durationSeconds: Math.floor(((scInfo as any).durationInMs || 0) / 1000),
@@ -275,70 +407,15 @@ export async function playTrack(member: GuildMember, url: string): Promise<PlayR
         thumbnail: (scInfo as any).thumbnail,
       };
     } else {
-      // Search query — Try YouTube first, fallback to SoundCloud
-      let found = false;
-
-      try {
-        const results = await playdl.search(url, { limit: 1 });
-        if (results && results.length > 0) {
-          const r = results[0];
-          trackInfo = {
-            url: r.url,
-            title: r.title ?? 'Unknown',
-            duration: formatDuration(r.durationInSec ?? 0),
-            durationSeconds: r.durationInSec ?? 0,
-            requestedBy: member.user.tag,
-            requestedByUserId: member.user.id,
-            thumbnail: r.thumbnails?.[0]?.url,
-          };
-          found = true;
-        }
-      } catch {
-        // YouTube search rate limited, try SoundCloud
-      }
-
-      if (!found) {
-        await ensureSoundCloud();
-        const scResults = await playdl.search(url, { source: { soundcloud: 'tracks' }, limit: 1 });
-        if (scResults && scResults.length > 0) {
-          const sc = scResults[0];
-          trackInfo = {
-            url: sc.url,
-            title: sc.name ?? 'Unknown',
-            duration: formatDuration(sc.durationInSec ?? 0),
-            durationSeconds: sc.durationInSec ?? 0,
-            requestedBy: member.user.tag,
-            requestedByUserId: member.user.id,
-            thumbnail: sc.thumbnail,
-          };
-          found = true;
-        }
-      }
-
-      if (!found || !trackInfo) {
+      // General Keyword Search
+      trackInfo = await searchSingleTrack(cleanInput, member.user.tag, member.user.id);
+      if (!trackInfo) {
         return { success: false, error: 'No songs found matching your search. Please try another title.' };
       }
     }
   } catch (err: any) {
-    // If YouTube throws rate limit or error during video_info, try soundcloud search
-    try {
-      await ensureSoundCloud();
-      const scResults = await playdl.search(url, { source: { soundcloud: 'tracks' }, limit: 1 });
-      if (scResults && scResults.length > 0) {
-        const sc = scResults[0];
-        trackInfo = {
-          url: sc.url,
-          title: sc.name ?? 'Unknown',
-          duration: formatDuration(sc.durationInSec ?? 0),
-          durationSeconds: sc.durationInSec ?? 0,
-          requestedBy: member.user.tag,
-          requestedByUserId: member.user.id,
-          thumbnail: sc.thumbnail,
-        };
-      } else {
-        return { success: false, error: `Failed to load song: ${err?.message || err}` };
-      }
-    } catch {
+    trackInfo = await searchSingleTrack(cleanInput, member.user.tag, member.user.id);
+    if (!trackInfo) {
       return { success: false, error: `Failed to load song: ${err?.message || err}` };
     }
   }
