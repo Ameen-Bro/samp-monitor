@@ -228,6 +228,15 @@ function checkAdminPermission(interaction: ChatInputCommandInteraction): boolean
     return true;
   }
 
+  // Check if user is configured directly as a bot admin user ID
+  const adminUserId = getSetting(SETTING_KEYS.BOT_ADMIN_USER_ID) || config.adminUserId;
+  if (adminUserId) {
+    const allowedIds = adminUserId.split(',').map((id) => id.trim());
+    if (allowedIds.includes(interaction.user.id)) {
+      return true;
+    }
+  }
+
   const adminRoleId = getSetting(SETTING_KEYS.BOT_ADMIN_ROLE_ID) || config.adminRoleId;
 
   if (!adminRoleId) {

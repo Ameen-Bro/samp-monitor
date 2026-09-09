@@ -16,6 +16,7 @@ export interface BotConfig {
   missedQueryThreshold: number;
 
   adminRoleId?: string;
+  adminUserId?: string;
   logChannelId?: string;
   dailyReportHour: number; // 0-23 in configured timezone
   dailyReportMinute: number;
@@ -37,6 +38,7 @@ export const config: BotConfig = {
   missedQueryThreshold: Math.max(1, parseInt(process.env.MISSED_QUERY_THRESHOLD || '3', 10)),
 
   adminRoleId: process.env.ADMIN_ROLE_ID || undefined,
+  adminUserId: process.env.ADMIN_USER_ID || undefined,
   logChannelId: process.env.LOG_CHANNEL_ID || undefined,
   dailyReportHour: parseInt(process.env.DAILY_REPORT_HOUR || '23', 10),
   dailyReportMinute: parseInt(process.env.DAILY_REPORT_MINUTE || '59', 10),

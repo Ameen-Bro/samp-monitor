@@ -10,7 +10,8 @@
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:samp": "tsx scripts/test-samp.ts"
+    "test:samp": "tsx scripts/test-samp.ts",
+    "set-admin": "node scripts/set-admin.js"
   },
   "keywords": [
     "samp",

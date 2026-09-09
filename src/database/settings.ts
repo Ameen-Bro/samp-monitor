@@ -26,6 +26,7 @@ export const SETTING_KEYS = {
   TICKET_LOG_CHANNEL_ID: 'ticket_log_channel_id',
   TICKET_NEXT_NUMBER: 'ticket_next_number',
   BOT_ADMIN_ROLE_ID: 'bot_admin_role_id',
+  BOT_ADMIN_USER_ID: 'bot_admin_user_id',
 
   // Music 24/7
   MUSIC_247_ENABLED: 'music_247_enabled',
