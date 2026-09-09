@@ -1,213 +1,148 @@
-# 🌐 Multi-Feature SA-MP / Open.MP Activity Monitor, Music & Ticket Bot
+# 🎮 SA-MP & Open.MP All-In-One Discord Bot
+### 📡 Activity Monitor • 🎵 Music System • 🎫 Support Tickets • 🏢 Custom Branding
 
-A professional, sellable, and modular Discord bot built in **TypeScript** designed for gaming communities, roleplay factions (Police, Medical, Mafia, Gangs, Government), and server administrators.
-
-It combines **three complete enterprise-grade systems** into a single unified bot:
-1. **Generic SA-MP / Open.MP Activity Monitor & Attendance Engine** (Zero hardcoded server IPs, configurable via Discord)
-2. **Music System & 24/7 Voice Mode** (Queue management, loop, shuffle, volume, pure-JS audio pipeline)
-3. **Support Ticket System** (6 support categories, private channels, automated transcripts, staff claim)
+> **A 100% plug-and-play, sellable, and reusable Discord bot for SA-MP & Open.MP servers, clans, gangs, and factions.**  
+> **No programming knowledge required** — Everything is fully configurable directly through Discord slash commands!
 
 ---
 
 ## 📑 Table of Contents
 
-1. [Key Features](#-key-features)
-2. [Command Reference](#-command-reference)
-3. [Architecture Overview](#-architecture-overview)
-4. [Installation & Setup](#-installation--setup)
-5. [Configuring the Bot via Discord](#-configuring-the-bot-via-discord)
-6. [Hosting Guide (Bot-Hosting.net / Pterodactyl / VPS)](#-hosting-guide)
-7. [Database Migrations & Backward Compatibility](#-database-migrations--backward-compatibility)
-8. [Testing & Quality Assurance](#-testing--quality-assurance)
+1. [✨ Bot Features](#-features)
+2. [⚡ 5-Minute Quick Setup](#-5-minute-quick-setup)
+   - [Step 1: Get Discord Bot Credentials](#step-1-get-discord-bot-credentials)
+   - [Step 2: Invite the Bot to Your Server](#step-2-invite-the-bot-to-your-server)
+   - [Step 3: Hosting Options (PC, VPS, Termux, Free Hosting)](#step-3-choose-your-hosting)
+3. [🎮 Setup Directly Inside Discord](#-setup-directly-inside-discord-no-code-needed)
+   - [Connect Your SA-MP Server (`/server-config`)](#1-connect-your-sa-mp-server)
+   - [Customize Your Organization Branding (`/org-config`)](#2-customize-your-organization-branding)
+   - [Deploy Live Dashboard (`/dashboard`)](#3-deploy-the-live-activity-dashboard)
+   - [Add Members & Officers (`/add-member`)](#4-add-members-to-track)
+   - [Set Up Support Tickets (`/ticket-setup`)](#5-setup-support-tickets)
+   - [Use the Music System (`/play`, `/247`)](#6-play-music--247-mode)
+4. [📋 Complete Command Reference](#-complete-command-reference)
+5. [❓ FAQ & Troubleshooting](#-faq--troubleshooting)
 
 ---
 
-## ✨ Key Features
+## ✨ Features
 
-### 1. 📡 Generic SA-MP / Open.MP Activity Monitor
-- **No Hardcoded Server**: No default IP or port is baked into the code. Configure or change your target server at any time directly through Discord via `/server-config set`.
-- **Live UDP Query Engine**: Native binary packet builder/parser (`'i'`, `'d'`, `'c'`, `'p'`) compatible with all SA-MP and Open.MP servers.
-- **Dynamic Organization Branding**: Change organization name, member labels ("Officer", "Agent", "Guard"), icons, and dashboard titles via `/org-config branding`.
-- **Live Interactive Dashboard**: Displays online and offline members, session durations, today's patrol/activity time, player counts, and latency.
-- **Missed Query Protection**: Prevents transient network jitter from prematurely terminating active sessions.
-- **Midnight Session Splitting**: Accurately splits cross-midnight sessions into separate calendar days based on configured timezone (`Asia/Kolkata` by default).
-- **Restart Recovery**: Reconciles active sessions on bot reboot without duplicating or losing recorded hours.
+* **📡 SA-MP / Open.MP Live Activity Monitor**:
+  * Real-time query directly over UDP (No RCON password or server plugins needed).
+  * Tracks online status, session durations, daily/weekly/monthly play time, and lifetime totals.
+  * **Midnight Splitting**: Accurately accounts for sessions spanning past midnight.
+  * **Network Jitter Protection**: Brief lag or query timeouts will not prematurely reset active sessions.
+  * **Automatic Restart Recovery**: Keeps track of open sessions even after bot reboot.
 
-### 2. 🎵 Music System & 24/7 Voice Mode
-- **Playback Controls**: `/play`, `/pause`, `/resume`, `/skip`, `/stop`, `/queue`, `/nowplaying`, `/volume`, `/loop`, `/shuffle`.
-- **YouTube & Search Support**: Search by title or provide direct YouTube video and playlist URLs.
-- **24/7 Voice Mode**: `/247 setup` keeps the bot permanently connected to your designated voice channel.
-- **Pure JavaScript Audio Stack**: Uses `@discordjs/voice` + `opusscript` + `tweetnacl` + `play-dl` without requiring C++ compilation or Python build tools.
+* **🏢 100% Configurable Branding**:
+  * Adaptable for any faction: **Police (PD), Medics (EMS), FBI, Mafia, Gangs, Military, or Clan communities**.
+  * Change organization name, member titles ("Officer", "Agent", "Member"), emoji icons, and titles right inside Discord.
 
-### 3. 🎫 Multi-Category Support Ticket System
-- **One-Click Ticket Panel**: `/ticket-setup` posts an interactive button panel with 6 built-in categories:
-  - 📢 Complaint
-  - 🛠️ Staff Assistance
-  - 📝 Recruitment
-  - 🚨 Report Player
-  - 💻 Technical Support
-  - ❓ General Support
-- **Private Channel Generation**: Automatically creates restricted channels with strict permission overwrites visible only to the ticket creator and staff roles.
-- **Transcript Logging**: Generates conversation transcripts and logs closed tickets to a designated audit channel.
-- **One Ticket per User**: Enforces a 1-active-ticket limit per user to eliminate spam.
+* **🎵 Voice Music System & 24/7 Mode**:
+  * Play YouTube tracks, search by keywords, or queue entire playlists.
+  * Full controls: `/play`, `/pause`, `/resume`, `/skip`, `/stop`, `/queue`, `/nowplaying`, `/volume`, `/loop`, `/shuffle`.
+  * **24/7 Voice Mode**: Keep the bot inside a voice channel permanently.
+
+* **🎫 Support Ticket System**:
+  * One-click ticket panel with 6 built-in categories (Complaint, Staff Help, Recruitment, Report Player, Tech Support, General).
+  * Automatically creates private channels visible only to the ticket creator and staff roles.
+  * Staff claim system (`✋ Claim`) and automated transcript logging upon closure.
 
 ---
 
-## 💻 Command Reference
+## ⚡ 5-Minute Quick Setup
 
-### 🌐 Server & Organization Administration
-| Command | Permission | Description |
-|---|---|---|
-| `/server-config set` | Admin | Open modal to set Server IP, Port, and Query Interval with live UDP test |
-| `/server-config status` | Admin | Check current server IP, port, and tracker status |
-| `/server-config test` | Admin | Send a test UDP ping and display live server stats |
-| `/server-config remove` | Admin | Unbind server and pause tracker without deleting member data |
-| `/org-config branding` | Admin | Customize Org Name, Icon, Member Label, and Dashboard Title |
-| `/org-config channels` | Admin | Configure Log Channel, Staff Role, and Ticket Log Channel |
-| `/org-config view` | Admin | View current branding and channel settings |
+### Step 1: Get Discord Bot Credentials
+1. Go to the **[Discord Developer Portal](https://discord.com/developers/applications)**.
+2. Click **"New Application"**, give it a name (e.g. `Server Bot`), and click **Create**.
+3. Go to the **"Bot"** tab on the left:
+   - Click **"Reset Token"** and copy your **Discord Bot Token**.
+   - Under **Privileged Gateway Intents**, enable:
+     - ✅ **Server Members Intent**
+     - ✅ **Message Content Intent**
+4. Go to the **"General Information"** tab and copy your **Application (Client) ID**.
 
-### 📊 Activity Monitoring & Attendance
-| Command | Permission | Description |
-|---|---|---|
-| `/dashboard` | Everyone | Spawns or updates the permanent live activity dashboard |
-| `/pd-dashboard` | Everyone | *(Backward-compatible alias)* |
-| `/add-member <name>` | Admin | Register a member by in-game name |
-| `/add-officer <name>` | Admin | *(Backward-compatible alias)* |
-| `/remove-member <name>` | Admin | Deactivate a registered member |
-| `/remove-officer <name>` | Admin | *(Backward-compatible alias)* |
-| `/members` | Everyone | List all registered members |
-| `/officers` | Everyone | *(Backward-compatible alias)* |
-| `/online [name]` | Everyone | Check live status and today's stats for all or one member |
-| `/history <name>` | Everyone | Display recent session history for a member |
-| `/leaderboard` | Everyone | Rank members by lifetime accumulated activity time |
-| `/weekly` | Everyone | Display this week's accumulated time per member |
-| `/monthly` | Everyone | Display this month's accumulated time per member |
-| `/status` | Everyone | Display current SA-MP / Open.MP server status and player count |
-| `/force-check` | Everyone | Trigger an immediate manual server query |
-
-### 🎵 Music Commands
-| Command | Permission | Description |
-|---|---|---|
-| `/play <query>` | Everyone | Play song from YouTube URL, playlist, or search keywords |
-| `/pause` | Everyone | Pause current playback |
-| `/resume` | Everyone | Resume playback |
-| `/skip` | Everyone | Skip currently playing track |
-| `/stop` | Everyone | Stop playback, clear queue, and disconnect |
-| `/queue` | Everyone | View upcoming tracks and loop mode |
-| `/nowplaying` | Everyone | View current track, duration, volume, and requester |
-| `/volume <0-200>` | Everyone | Adjust audio volume level |
-| `/loop <off\|track\|queue>` | Everyone | Set loop mode |
-| `/shuffle` | Everyone | Randomize current queue order |
-| `/247 <setup\|enable\|disable\|status>` | Admin | Manage 24/7 voice channel persistence |
-
-### 🎫 Ticket Commands
-| Command | Permission | Description |
-|---|---|---|
-| `/ticket-setup` | Admin | Post the ticket creation panel with category buttons |
+### Step 2: Invite the Bot to Your Server
+1. In the Developer Portal, go to **OAuth2 → URL Generator**.
+2. Under **Scopes**, select:
+   - ✅ `bot`
+   - ✅ `applications.commands`
+3. Under **Bot Permissions**, select:
+   - ✅ `Administrator` (recommended for full ticket & voice functionality).
+4. Copy the generated URL at the bottom, paste it into your browser, and select your server to invite the bot.
 
 ---
 
-## 🏗️ Architecture Overview
+### Step 3: Choose Your Hosting
 
-```
-src/
-├── index.ts                 # Bootstrap, Discord lifecycle & modal router
-├── config.ts                # Environment configuration loader
-├── samp/
-│   ├── types.ts             # SA-MP packet & status interfaces
-│   ├── parser.ts            # Binary packet builder & response parser
-│   └── query.ts             # UDP socket client with timeout & fallbacks
-├── tracking/
-│   ├── tracker.ts           # Dynamic server polling engine & state manager
-│   └── recovery.ts          # Crash recovery & session reconciliation
-├── database/
-│   ├── db.ts                # SQLite init, WAL mode, migrations
-│   ├── settings.ts          # Centralized settings & branding store
-│   ├── officers.ts          # Member/Officer registry
-│   ├── sessions.ts          # Session tracking & attendance stats
-│   ├── tickets.ts           # Support ticket records & audit trail
-│   ├── queryLogs.ts         # Query diagnostic history
-│   └── dashboardConfig.ts   # Permanent dashboard message tracker
-├── discord/
-│   ├── client.ts            # Discord.js client instance
-│   ├── commands.ts          # All 29 slash command definitions & router
-│   ├── buttons.ts           # Button interaction router
-│   ├── dashboard.ts         # Dynamic branding dashboard builder
-│   ├── serverConfig.ts      # Server configuration modal & testing
-│   ├── branding.ts          # Organization branding modal handler
-│   ├── musicCommands.ts     # Music slash command handlers
-│   ├── ticketCommands.ts    # Ticket slash command & button handlers
-│   └── dailyReport.ts       # Automated daily report scheduler
-├── music/
-│   ├── types.ts             # Music queue & playback state types
-│   └── player.ts            # Discord voice connection & stream pipeline
-├── tickets/
-│   └── ticketManager.ts     # Channel creation, permissions & transcript log
-└── utils/
-    ├── logger.ts            # Structured leveled logger
-    ├── normalizeName.ts     # In-game name case normalizer
-    └── time.ts              # Timezone calculation & midnight splitter
-```
+<details>
+<summary><b>📱 Option A: Android Mobile (Termux) — Free & Mobile</b></summary>
 
----
-
-## 🚀 Installation & Setup
-
-### Prerequisites
-- **Node.js**: v22.0.0 or higher (uses native `node:sqlite` built into modern Node.js)
-- **Discord Bot Token & Client ID**: from [Discord Developer Portal](https://discord.com/developers/applications)
-
-### Step 1: Clone and Install
+1. Install **Termux** from [F-Droid](https://f-droid.org/packages/com.termux/).
+2. Run these commands one by one:
 ```bash
+termux-wake-lock
+pkg update -y && pkg upgrade -y
+pkg install -y git nodejs
 git clone https://github.com/Ameen-Bro/samp-monitor.git
 cd samp-monitor
-npm install
 ```
-
-### Step 2: Configure Environment Variables
-Copy `.env.example` to `.env` and fill in your Discord credentials:
-```env
-DISCORD_TOKEN=your_bot_token_here
+3. Create your `.env` configuration file:
+```bash
+cat << 'EOF' > .env
+DISCORD_TOKEN=your_token_here
 DISCORD_CLIENT_ID=your_client_id_here
-DISCORD_GUILD_ID=your_guild_id_here
-
+DISCORD_GUILD_ID=your_server_id_here
 TIMEZONE=Asia/Kolkata
 QUERY_INTERVAL_SECONDS=30
 MISSED_QUERY_THRESHOLD=3
+EOF
 ```
-
-*(Note: SA-MP server IP and port are configured inside Discord using `/server-config set`!)*
-
-### Step 3: Build & Start
+4. Build and start:
 ```bash
+npm install
 npm run build
-npm start
+npm install -g pm2
+pm2 start dist/index.js --name "samp-bot"
+pm2 save
 ```
+</details>
 
----
+<details>
+<summary><b>☁️ Option B: Free Discord Bot Hosting (Bot-Hosting.net / Pterodactyl)</b></summary>
 
-## 🎮 Configuring the Bot via Discord
+1. Register on [Bot-Hosting.net](https://bot-hosting.net/) or any Pterodactyl panel host.
+2. Create a **Node.js** server.
+3. Upload this repository or clone via Git.
+4. Set **Startup File** to: `dist/index.js`.
+5. Under the **Variables** tab, fill in:
+   - `DISCORD_TOKEN`
+   - `DISCORD_CLIENT_ID`
+   - `DISCORD_GUILD_ID`
+6. Run `npm install && npm run build` in the console and start the bot.
+</details>
 
-1. **Invite Bot**: Grant `bot` and `applications.commands` scopes with Administrator or channel management permissions.
-2. **Set Server IP**: Run `/server-config set` and enter your SA-MP / Open.MP IP (e.g. `139.99.52.211`) and Port (`7777`). The bot tests connectivity via live UDP before saving!
-3. **Set Branding**: Run `/org-config branding` to customize your Org Name, Member Label (e.g., `Officer`), and Dashboard Title.
-4. **Deploy Dashboard**: Run `/dashboard` in your desired channel.
-5. **Add Members**: Run `/add-member <InGame_Name>` to begin tracking playtime.
-6. **Setup Tickets**: Run `/ticket-setup` in your support channel.
+<details>
+<summary><b>💻 Option C: Windows PC / Laptop</b></summary>
 
----
+1. Install **[Node.js (v22 or newer)](https://nodejs.org/)** and **Git**.
+2. Open PowerShell or Terminal:
+```powershell
+git clone https://github.com/Ameen-Bro/samp-monitor.git
+cd samp-monitor
+npm.cmd install
+```
+3. Copy `.env.example` to `.env` and fill in your Discord credentials.
+4. Build and run:
+```powershell
+npm.cmd run build
+npm.cmd start
+```
+</details>
 
-## 🌐 Hosting Guide
+<details>
+<summary><b>🐧 Option D: Linux VPS (Ubuntu / Debian with PM2)</b></summary>
 
-### Bot-Hosting.net (Pterodactyl Panel)
-1. In your Bot-Hosting dashboard, select **Node.js** as your environment.
-2. Upload the repository files (or clone from GitHub).
-3. Set **Startup File** to: `dist/index.js`.
-4. In the **Build Step** or terminal, run: `npm install && npm run build`.
-5. Enter your environment variables in the **Variables** tab or upload `.env`.
-6. Start the server!
-
-### Ubuntu VPS (PM2)
 ```bash
 sudo apt update && sudo apt install -y nodejs npm git
 sudo npm install -g pm2
@@ -215,38 +150,171 @@ git clone https://github.com/Ameen-Bro/samp-monitor.git
 cd samp-monitor
 npm install
 npm run build
-pm2 start dist/index.js --name "samp-monitor"
-pm2 save
-pm2 startup
+pm2 start dist/index.js --name "samp-bot"
+pm2 save && pm2 startup
+```
+</details>
+
+---
+
+## 🎮 Setup Directly Inside Discord (No Code Needed!)
+
+Once your bot is online, you can configure everything right inside your Discord server using Slash Commands:
+
+### 1. Connect Your SA-MP Server
+Run the command:
+```
+/server-config set
+```
+A popup window will appear:
+* **Server IP Address**: Enter your server IP or domain (e.g. `139.99.52.211` or `play.myserver.com`)
+* **Server Port**: Enter your port (e.g. `7777`)
+* **Query Interval**: Enter `30` (recommended seconds between checks)
+
+> 💡 *The bot will automatically ping the server via live UDP to verify it is online before saving!*
+
+---
+
+### 2. Customize Your Organization Branding
+Make the bot match your clan, police department, or faction:
+```
+/org-config branding
+```
+A popup will appear to customize:
+* **Organization Name**: (e.g., `Los Santos Police Department` or `Grove Street Families`)
+* **Dashboard Icon**: (e.g., `🛡️`, `🚑`, `🔫`, or `🏢`)
+* **Member Label**: (e.g., `Officer`, `Deputy`, `Agent`, `Member`)
+* **Dashboard Title**: (e.g., `PATROL MONITOR` or `ACTIVITY DASHBOARD`)
+* **Footer Text**: (e.g., `Official Faction Activity Tracker`)
+
+---
+
+### 3. Deploy the Live Activity Dashboard
+Go to the text channel where you want the live dashboard and type:
+```
+/dashboard
+```
+This spawns the permanent live dashboard message. It automatically refreshes every few seconds and contains interactive buttons:
+* `🔄 Refresh`: Force an instant query check
+* `📊 Today`: Shows today's activity stats
+* `📅 Weekly`: Shows this week's hours
+* `📆 Monthly`: Shows this month's hours
+* `🏆 Leaderboard`: All-time top performers rank
+
+---
+
+### 4. Add Members to Track
+Register in-game character names to begin tracking:
+```
+/add-member ig_name: John_Doe
+```
+To remove someone:
+```
+/remove-member ig_name: John_Doe
+```
+To list all registered members:
+```
+/members
 ```
 
 ---
 
-## 🔒 Database Migrations & Backward Compatibility
+### 5. Setup Support Tickets
+Go to your support channel and type:
+```
+/ticket-setup
+```
+The bot creates a support panel with 6 category buttons:
+* 📢 **Complaint**
+* 🛠️ **Staff Assistance**
+* 📝 **Recruitment**
+* 🚨 **Report Player**
+* 💻 **Technical Support**
+* ❓ **General Support**
 
-- Uses Node 22+ built-in `node:sqlite` in WAL mode — **zero C++ build requirements**.
-- Existing SQLite databases are preserved automatically. The migration engine adds missing tables (`settings`, `tickets`, `ticket_actions`) and columns (`discord_user_id`, `display_name`) safely using schema inspection.
-- All legacy commands (`/pd-dashboard`, `/add-officer`, `/remove-officer`, `/officers`) continue to function alongside modern generic commands.
+When a user clicks a button, a private channel is automatically created for them and staff. Staff can click `✋ Claim`, and closing the ticket saves an audit transcript.
 
 ---
 
-## 🧪 Testing & Quality Assurance
-
-Run the comprehensive unit test suite:
-```bash
-npm test
+### 6. Play Music & 24/7 Mode
+Join any voice channel and type:
+```
+/play query: faded alan walker
+```
+Or use a YouTube link:
+```
+/play query: https://www.youtube.com/watch?v=60ItHLz5WEA
+```
+To keep the bot in the voice channel permanently:
+```
+/247 setup
 ```
 
-All 27 test suites pass out-of-the-box, verifying:
-- SA-MP Binary packet parser & builder
-- In-game name normalization
-- Session tracking and SQLite aggregations
-- Midnight session splitting in configured timezones
-- Startup crash recovery
-- Missed query protection against dropped UDP packets
-- Dynamic dashboard layout, online-first sorting, and pagination
+---
+
+## 📋 Complete Command Reference
+
+### 🛡️ Administration (Admin / Owner Only)
+| Command | Usage | Description |
+|---|---|---|
+| `/server-config set` | `/server-config set` | Connects SA-MP / Open.MP server via modal |
+| `/server-config status` | `/server-config status` | Check connection and tracker status |
+| `/server-config test` | `/server-config test` | Ping server and show latency/players |
+| `/server-config remove` | `/server-config remove` | Disconnect server without losing member data |
+| `/org-config branding` | `/org-config branding` | Customize Org Name, Icon, and Titles |
+| `/org-config channels` | `/org-config channels` | Set Log Channel and Ticket Staff Role |
+| `/org-config view` | `/org-config view` | View current branding settings |
+| `/ticket-setup` | `/ticket-setup` | Post the ticket creation panel |
+
+### 👥 Member Tracking & Attendance
+| Command | Usage | Description |
+|---|---|---|
+| `/dashboard` | `/dashboard` | Post the live auto-updating activity dashboard |
+| `/add-member` | `/add-member ig_name: John` | Register an in-game name |
+| `/remove-member` | `/remove-member ig_name: John` | Deactivate a member |
+| `/members` | `/members` | List all registered members |
+| `/online` | `/online [ig_name]` | View live status and today's hours for all or one member |
+| `/history` | `/history ig_name: John` | View recent session start/end history |
+| `/leaderboard` | `/leaderboard` | Show all-time activity leaderboard |
+| `/weekly` | `/weekly` | Show weekly accumulated hours |
+| `/monthly` | `/monthly` | Show monthly accumulated hours |
+| `/status` | `/status` | Check SA-MP server status and player count |
+| `/force-check` | `/force-check` | Force an immediate server query |
+
+### 🎵 Music System
+| Command | Usage | Description |
+|---|---|---|
+| `/play` | `/play query: <name or url>` | Play a song or playlist |
+| `/pause` | `/pause` | Pause music |
+| `/resume` | `/resume` | Resume paused music |
+| `/skip` | `/skip` | Skip current song |
+| `/stop` | `/stop` | Stop playing and clear queue |
+| `/queue` | `/queue` | View current music queue |
+| `/nowplaying` | `/nowplaying` | Display current track info |
+| `/volume` | `/volume level: 80` | Set volume (0-200) |
+| `/loop` | `/loop mode: track/queue/none` | Change loop mode |
+| `/shuffle` | `/shuffle` | Shuffle upcoming songs |
+| `/247` | `/247 <setup/disable/status>` | Stay 24/7 in voice channel |
 
 ---
 
-## 📜 License
-MIT License. Created for the SA-MP & Open.MP communities.
+## ❓ FAQ & Troubleshooting
+
+#### 1. The bot says "No server configured. Use /server-config set first."
+* This is normal! The bot is designed without any hardcoded server so anyone can use it. Simply run `/server-config set` in Discord to connect your SA-MP server.
+
+#### 2. The bot says "Could not connect to IP:Port"
+* Make sure your SA-MP server is online and running.
+* Ensure your server firewall allows UDP queries on port `7777` (standard SA-MP query port).
+
+#### 3. Music commands say "You must be in a voice channel"
+* Make sure you are connected to a voice channel before running `/play`.
+* Ensure the bot has the **"Connect"** and **"Speak"** permissions in that channel.
+
+#### 4. Can I change "Officer" to "Member" or "Gangster"?
+* Yes! Run `/org-config branding` and set **Member Label** to whatever you want.
+
+---
+
+## 📄 License
+This project is licensed under the MIT License — free for personal and commercial distribution.
