@@ -25,12 +25,12 @@ export async function handleTicketSetupCommand(interaction: ChatInputCommandInte
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    const { embed, row } = buildTicketPanelEmbed();
+    const { embed, rows } = buildTicketPanelEmbed();
     const channel = interaction.channel as TextChannel;
 
-    await channel.send({ embeds: [embed], components: [row] });
+    await channel.send({ embeds: [embed], components: rows });
     await interaction.editReply({ content: '✅ Ticket panel created in this channel!' });
-    logger.info('Tickets', `Ticket panel created by ${interaction.user.tag} in guild ${interaction.guildId}`);
+    logger.info('Tickets', `Ticket panel created by ${interaction.user.username} in guild ${interaction.guildId}`);
   } catch (err) {
     logger.error('Tickets', `Failed to setup ticket panel: ${err}`);
     await interaction.editReply({ content: '❌ Failed to create ticket panel. Check bot permissions.' });

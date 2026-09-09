@@ -36,7 +36,7 @@ export const TICKET_CATEGORIES = [
 export type TicketCategoryId = typeof TICKET_CATEGORIES[number]['id'];
 
 // ─── Build the ticket panel ────────────────────────────────────────────────────
-export function buildTicketPanelEmbed(): { embed: EmbedBuilder; row: ActionRowBuilder<ButtonBuilder> } {
+export function buildTicketPanelEmbed(): { embed: EmbedBuilder; rows: ActionRowBuilder<ButtonBuilder>[] } {
   const branding = getBrandingConfig();
 
   const embed = new EmbedBuilder()
@@ -48,16 +48,24 @@ export function buildTicketPanelEmbed(): { embed: EmbedBuilder; row: ActionRowBu
     )
     .setFooter({ text: 'One open ticket per user at a time.' });
 
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    ...TICKET_CATEGORIES.map((cat) =>
-      new ButtonBuilder()
-        .setCustomId(`ticket_open_${cat.id}`)
-        .setLabel(cat.label)
-        .setStyle(ButtonStyle.Secondary)
-    )
-  );
+  // Discord limits action rows to at most 5 buttons per row.
+  // We split 6 categories into 2 rows of 3 buttons each.
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  const chunkSize = 3;
+  for (let i = 0; i < TICKET_CATEGORIES.length; i += chunkSize) {
+    const chunk = TICKET_CATEGORIES.slice(i, i + chunkSize);
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      ...chunk.map((cat) =>
+        new ButtonBuilder()
+          .setCustomId(`ticket_open_${cat.id}`)
+          .setLabel(cat.label)
+          .setStyle(ButtonStyle.Secondary)
+      )
+    );
+    rows.push(row);
+  }
 
-  return { embed, row };
+  return { embed, rows };
 }
 
 // ─── Open a ticket ─────────────────────────────────────────────────────────────
