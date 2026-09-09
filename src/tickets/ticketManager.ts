@@ -85,9 +85,9 @@ export async function openTicket(
   try {
     // Create the ticket channel
     const channel = await guild.channels.create({
-      name: `ticket-${member.user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+      name: `ticket-${member.user.username.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user'}`,
       type: ChannelType.GuildText,
-      topic: `${categoryLabel} — ${member.user.tag}`,
+      topic: `${categoryLabel} — ${member.user.username}`,
       permissionOverwrites: [
         {
           id: guild.roles.everyone.id,
@@ -123,7 +123,7 @@ export async function openTicket(
     }) as TextChannel;
 
     // Store ticket in DB
-    const ticket = createTicket(guild.id, channel.id, member.user.id, member.user.tag, categoryLabel, subject);
+    const ticket = createTicket(guild.id, channel.id, member.user.id, member.user.username, categoryLabel, subject);
 
     // Send opening message in ticket channel
     const controlRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -156,13 +156,19 @@ export async function openTicket(
       components: [controlRow],
     });
 
-    logTicketAction(ticket.id, member.user.id, member.user.tag, 'OPENED', categoryLabel);
-    logger.info('Tickets', `Ticket #${ticket.ticket_number} opened by ${member.user.tag} in guild ${guild.id}`);
+    logTicketAction(ticket.id, member.user.id, member.user.username, 'OPENED', categoryLabel);
+    logger.info('Tickets', `Ticket #${ticket.ticket_number} opened by ${member.user.username} in guild ${guild.id}`);
 
     return { success: true, channelId: channel.id };
-  } catch (err) {
-    logger.error('Tickets', `Failed to open ticket: ${err}`);
-    return { success: false, error: 'Failed to create ticket channel. Please check bot permissions.' };
+  } catch (err: unknown) {
+    // Surface full Discord API error (code + message) for easier debugging
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const errCode = (err as Record<string, unknown>)?.code ?? 'unknown';
+    logger.error('Tickets', `Failed to open ticket (code=${errCode}): ${errMsg}`);
+    return {
+      success: false,
+      error: `Failed to create ticket channel (error ${errCode}). Make sure the bot has **Manage Channels** permission and the **GuildMembers** intent is enabled in the Discord Developer Portal.`,
+    };
   }
 }
 
@@ -177,8 +183,8 @@ export async function closeTicketChannel(
     return;
   }
 
-  closeTicket(channel.id, closedBy.user.tag);
-  logTicketAction(ticket.id, closedBy.user.id, closedBy.user.tag, 'CLOSED');
+  closeTicket(channel.id, closedBy.user.username);
+  logTicketAction(ticket.id, closedBy.user.id, closedBy.user.username, 'CLOSED');
 
   const branding = getBrandingConfig();
 

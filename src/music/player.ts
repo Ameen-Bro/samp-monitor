@@ -16,14 +16,25 @@ import { isSpotifyUrl, getSpotifyType, resolveSpotifyTrack, resolveSpotifyPlayli
 import { logger } from '../utils/logger';
 import { getSetting, setSetting, deleteSetting, SETTING_KEYS } from '../database/settings';
 
-// Configure FFMPEG path if ffmpeg-static is available
+// Configure FFMPEG path — prepend ffmpeg-static directory to PATH so
+// prism-media (used by play-dl) can locate the binary via PATH lookup.
 try {
   const ffmpegStatic = require('ffmpeg-static');
-  if (ffmpegStatic && !process.env.FFMPEG_PATH) {
-    process.env.FFMPEG_PATH = ffmpegStatic;
+  if (ffmpegStatic) {
+    const pathModule = require('path');
+    const ffmpegDir = pathModule.dirname(ffmpegStatic as string);
+    const delimiter = pathModule.delimiter as string;
+    const currentPath = process.env.PATH ?? '';
+    if (!currentPath.split(delimiter).includes(ffmpegDir)) {
+      process.env.PATH = ffmpegDir + delimiter + currentPath;
+    }
+    // Also set FFMPEG_PATH for any tool that does read it
+    process.env.FFMPEG_PATH = ffmpegStatic as string;
+    logger.info('Music', `FFmpeg path set: ${ffmpegStatic as string}`);
   }
 } catch {
-  // Use system ffmpeg
+  // ffmpeg-static not installed — rely on system ffmpeg in PATH
+  logger.warn('Music', 'ffmpeg-static not found; relying on system ffmpeg.');
 }
 
 // Initialize SoundCloud fallback token once
