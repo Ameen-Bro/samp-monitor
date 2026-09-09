@@ -9,11 +9,39 @@ import {
   VoiceConnection,
   getVoiceConnection,
 } from '@discordjs/voice';
-import { Guild, GuildMember } from 'discord.js';
+import { GuildMember } from 'discord.js';
 import playdl from 'play-dl';
 import { GuildMusicState, QueueTrack, LoopMode } from './types';
 import { logger } from '../utils/logger';
 import { getSetting, setSetting, deleteSetting, SETTING_KEYS } from '../database/settings';
+
+// Configure FFMPEG path if ffmpeg-static is available
+try {
+  const ffmpegStatic = require('ffmpeg-static');
+  if (ffmpegStatic && !process.env.FFMPEG_PATH) {
+    process.env.FFMPEG_PATH = ffmpegStatic;
+  }
+} catch {
+  // Use system ffmpeg
+}
+
+// Initialize SoundCloud fallback token once
+let soundCloudReady = false;
+async function ensureSoundCloud(): Promise<boolean> {
+  if (soundCloudReady) return true;
+  try {
+    const clientID = await playdl.getFreeClientID();
+    if (clientID) {
+      await playdl.setToken({ soundcloud: { client_id: clientID } });
+      soundCloudReady = true;
+      logger.info('Music', 'SoundCloud audio provider initialized.');
+      return true;
+    }
+  } catch (err) {
+    logger.warn('Music', `SoundCloud init warning: ${err}`);
+  }
+  return false;
+}
 
 // Per-guild music state store
 const guildStates = new Map<string, GuildMusicState>();
@@ -51,7 +79,6 @@ function setupPlayerListeners(guildId: string, player: AudioPlayer): void {
     const state = getState(guildId);
 
     if (state.loopMode === 'track' && state.currentTrack) {
-      // Replay current track
       playNext(guildId).catch((err) => logger.error('Music', `Loop error: ${err}`));
       return;
     }
@@ -121,7 +148,7 @@ async function joinChannel(member: GuildMember, guildId: string): Promise<VoiceC
   }
 }
 
-// ─── Play Next Track ───────────────────────────────────────────────────────────
+// ─── Play Next Track (with Dual-Provider Fallback) ──────────────────────────────
 async function playNext(guildId: string): Promise<void> {
   const state = getState(guildId);
   const player = getPlayer(guildId);
@@ -140,7 +167,25 @@ async function playNext(guildId: string): Promise<void> {
   state.isPaused = false;
 
   try {
-    const stream = await playdl.stream(track.url, { quality: 2 });
+    let stream: any = null;
+
+    // 1. Try primary stream URL
+    try {
+      stream = await playdl.stream(track.url, { quality: 2 });
+    } catch (primaryErr: any) {
+      logger.warn('Music', `Direct stream failed for "${track.title}" (${primaryErr?.message || primaryErr}). Trying fallback provider...`);
+
+      // 2. Fallback to SoundCloud
+      await ensureSoundCloud();
+      const scResults = await playdl.search(track.title, { source: { soundcloud: 'tracks' }, limit: 1 });
+      if (scResults && scResults.length > 0) {
+        stream = await playdl.stream(scResults[0].url);
+        logger.info('Music', `Playing "${track.title}" via fallback provider.`);
+      } else {
+        throw primaryErr;
+      }
+    }
+
     const resource = createAudioResource(stream.stream, {
       inputType: stream.type,
       inlineVolume: true,
@@ -168,30 +213,16 @@ export async function playTrack(member: GuildMember, url: string): Promise<PlayR
   const guildId = member.guild.id;
 
   if (!member.voice.channel) {
-    return { success: false, error: 'You must be in a voice channel to play music.' };
+    return { success: false, error: 'You must be connected to a voice channel to play music.' };
   }
 
   // Validate and get track info
-  let trackInfo: QueueTrack;
+  let trackInfo: QueueTrack | null = null;
+
   try {
     const validated = await playdl.validate(url);
-    if (!validated || validated === 'search') {
-      // Try searching YouTube
-      const results = await playdl.search(url, { limit: 1 });
-      if (!results || results.length === 0) {
-        return { success: false, error: 'No results found for your search.' };
-      }
-      const r = results[0];
-      trackInfo = {
-        url: r.url,
-        title: r.title ?? 'Unknown',
-        duration: formatDuration(r.durationInSec ?? 0),
-        durationSeconds: r.durationInSec ?? 0,
-        requestedBy: member.user.tag,
-        requestedByUserId: member.user.id,
-        thumbnail: r.thumbnails?.[0]?.url,
-      };
-    } else if (validated === 'yt_video') {
+
+    if (validated === 'yt_video') {
       const info = await playdl.video_info(url);
       trackInfo = {
         url,
@@ -210,7 +241,7 @@ export async function playTrack(member: GuildMember, url: string): Promise<PlayR
       }
       const state = getState(guildId);
       const connection = await joinChannel(member, guildId);
-      if (!connection) return { success: false, error: 'Could not join your voice channel.' };
+      if (!connection) return { success: false, error: 'Could not join your voice channel. Check bot permissions.' };
 
       for (const v of playlistVideos) {
         state.queue.push({
@@ -231,15 +262,95 @@ export async function playTrack(member: GuildMember, url: string): Promise<PlayR
         track: { url, title: `Playlist (${playlistVideos.length} tracks)`, duration: '', durationSeconds: 0, requestedBy: member.user.tag, requestedByUserId: member.user.id },
         position: state.queue.length,
       };
+    } else if (validated === 'so_track') {
+      await ensureSoundCloud();
+      const scInfo = await playdl.soundcloud(url);
+      trackInfo = {
+        url: (scInfo as any).url || url,
+        title: (scInfo as any).name || 'Unknown',
+        duration: formatDuration(Math.floor(((scInfo as any).durationInMs || 0) / 1000)),
+        durationSeconds: Math.floor(((scInfo as any).durationInMs || 0) / 1000),
+        requestedBy: member.user.tag,
+        requestedByUserId: member.user.id,
+        thumbnail: (scInfo as any).thumbnail,
+      };
     } else {
-      return { success: false, error: 'Unsupported URL. Please use a YouTube link or search query.' };
+      // Search query — Try YouTube first, fallback to SoundCloud
+      let found = false;
+
+      try {
+        const results = await playdl.search(url, { limit: 1 });
+        if (results && results.length > 0) {
+          const r = results[0];
+          trackInfo = {
+            url: r.url,
+            title: r.title ?? 'Unknown',
+            duration: formatDuration(r.durationInSec ?? 0),
+            durationSeconds: r.durationInSec ?? 0,
+            requestedBy: member.user.tag,
+            requestedByUserId: member.user.id,
+            thumbnail: r.thumbnails?.[0]?.url,
+          };
+          found = true;
+        }
+      } catch {
+        // YouTube search rate limited, try SoundCloud
+      }
+
+      if (!found) {
+        await ensureSoundCloud();
+        const scResults = await playdl.search(url, { source: { soundcloud: 'tracks' }, limit: 1 });
+        if (scResults && scResults.length > 0) {
+          const sc = scResults[0];
+          trackInfo = {
+            url: sc.url,
+            title: sc.name ?? 'Unknown',
+            duration: formatDuration(sc.durationInSec ?? 0),
+            durationSeconds: sc.durationInSec ?? 0,
+            requestedBy: member.user.tag,
+            requestedByUserId: member.user.id,
+            thumbnail: sc.thumbnail,
+          };
+          found = true;
+        }
+      }
+
+      if (!found || !trackInfo) {
+        return { success: false, error: 'No songs found matching your search. Please try another title.' };
+      }
     }
-  } catch (err) {
-    return { success: false, error: `Failed to get track info: ${String(err)}` };
+  } catch (err: any) {
+    // If YouTube throws rate limit or error during video_info, try soundcloud search
+    try {
+      await ensureSoundCloud();
+      const scResults = await playdl.search(url, { source: { soundcloud: 'tracks' }, limit: 1 });
+      if (scResults && scResults.length > 0) {
+        const sc = scResults[0];
+        trackInfo = {
+          url: sc.url,
+          title: sc.name ?? 'Unknown',
+          duration: formatDuration(sc.durationInSec ?? 0),
+          durationSeconds: sc.durationInSec ?? 0,
+          requestedBy: member.user.tag,
+          requestedByUserId: member.user.id,
+          thumbnail: sc.thumbnail,
+        };
+      } else {
+        return { success: false, error: `Failed to load song: ${err?.message || err}` };
+      }
+    } catch {
+      return { success: false, error: `Failed to load song: ${err?.message || err}` };
+    }
+  }
+
+  if (!trackInfo) {
+    return { success: false, error: 'Could not resolve track information.' };
   }
 
   const connection = await joinChannel(member, guildId);
-  if (!connection) return { success: false, error: 'Could not join your voice channel.' };
+  if (!connection) {
+    return { success: false, error: 'Could not connect to your voice channel. Ensure the bot has "Connect" and "Speak" permissions!' };
+  }
 
   const state = getState(guildId);
   state.queue.push(trackInfo);
@@ -280,7 +391,7 @@ export function skipTrack(guildId: string): QueueTrack | null {
   const state = getState(guildId);
   const skipped = state.currentTrack;
   state.loopMode = state.loopMode === 'track' ? 'none' : state.loopMode;
-  player.stop(true); // triggers Idle → playNext
+  player.stop(true);
   return skipped;
 }
 
@@ -313,7 +424,6 @@ export function setVolume(guildId: string, volume: number): boolean {
   const state = getState(guildId);
   state.volume = vol;
 
-  // Update running resource volume
   const player = audioPlayers.get(guildId);
   if (player) {
     const resource = (player as any)._resource;

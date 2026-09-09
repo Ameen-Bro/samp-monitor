@@ -38,7 +38,7 @@ export async function handleOrgConfigCommand(interaction: ChatInputCommandIntera
 
     const orgIconInput = new TextInputBuilder()
       .setCustomId('org_icon')
-      .setLabel('Dashboard Icon/Emoji (e.g. 🛡️ or leave blank)')
+      .setLabel('Dashboard Icon/Emoji (e.g. 🛡️)')
       .setStyle(TextInputStyle.Short)
       .setValue(current.orgIcon)
       .setRequired(false)
@@ -110,7 +110,7 @@ export async function handleOrgConfigCommand(interaction: ChatInputCommandIntera
 
     const adminRoleInput = new TextInputBuilder()
       .setCustomId('bot_admin_role_id')
-      .setLabel('Bot Admin Role ID (optional, overrides Discord perms)')
+      .setLabel('Bot Admin Role ID (optional)')
       .setStyle(TextInputStyle.Short)
       .setValue('')
       .setRequired(false)
