@@ -23,7 +23,7 @@ export function initDatabase(dbPath?: string): DatabaseSync {
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec('PRAGMA synchronous = NORMAL;');
 
-  // Schema creation
+  // ── Original schema (never dropped — backward compatible) ─────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS officers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,8 +70,62 @@ export function initDatabase(dbPath?: string): DatabaseSync {
     );
   `);
 
+  // ── Migration: new tables ─────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tickets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_number INTEGER NOT NULL UNIQUE,
+      guild_id TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      creator_id TEXT NOT NULL,
+      creator_tag TEXT NOT NULL,
+      category TEXT NOT NULL,
+      subject TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      closed_at TEXT,
+      closed_by TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tickets_guild ON tickets (guild_id);
+    CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets (status);
+
+    CREATE TABLE IF NOT EXISTS ticket_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_id INTEGER NOT NULL,
+      actor_id TEXT NOT NULL,
+      actor_tag TEXT NOT NULL,
+      action TEXT NOT NULL,
+      note TEXT,
+      performed_at TEXT NOT NULL,
+      FOREIGN KEY (ticket_id) REFERENCES tickets (id) ON DELETE CASCADE
+    );
+  `);
+
+  // ── Migration: new columns on officers (safe check first) ─────────────────
+  runColumnMigration(db, 'officers', 'discord_user_id', 'TEXT');
+  runColumnMigration(db, 'officers', 'display_name', 'TEXT');
+
   dbInstance = db;
+  logger.info('Database', 'Schema migrations complete.');
   return db;
+}
+
+/**
+ * Safely adds a column to a table only if it doesn't already exist.
+ */
+function runColumnMigration(db: DatabaseSync, table: string, column: string, type: string): void {
+  const info = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!info.find((col) => col.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type};`);
+    logger.info('Database', `Migration: Added column ${column} to ${table}`);
+  }
 }
 
 export function getDb(): DatabaseSync {

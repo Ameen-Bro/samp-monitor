@@ -73,6 +73,6 @@ describe('Dashboard Layout, Online-First Sorting & Pagination', () => {
 
   it('should show placeholder message if no officers are registered', () => {
     const dashboard = buildDashboard(null, 1);
-    expect(dashboard.embeds[0].data.description).toContain('No officers registered yet');
+    expect(dashboard.embeds[0].data.description).toMatch(/No (members|officers) registered yet/i);
   });
 });

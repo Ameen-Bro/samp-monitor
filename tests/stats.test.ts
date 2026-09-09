@@ -75,12 +75,12 @@ describe('Statistics, Leaderboard & Aggregations', () => {
     addOfficer('Officer_B');
 
     const todayEmbed = buildPeriodEmbed('today');
-    expect(todayEmbed.data.title).toContain('TODAY’S PD PATROL STATS');
+    expect(todayEmbed.data.title).toContain('TODAY');
 
     const weeklyEmbed = buildPeriodEmbed('weekly');
-    expect(weeklyEmbed.data.title).toContain('THIS WEEK’S PD PATROL STATS');
+    expect(weeklyEmbed.data.title).toContain('THIS WEEK');
 
     const monthlyEmbed = buildPeriodEmbed('monthly');
-    expect(monthlyEmbed.data.title).toContain('THIS MONTH’S PD PATROL STATS');
+    expect(monthlyEmbed.data.title).toContain('THIS MONTH');
   });
 });

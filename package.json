@@ -22,10 +22,14 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@discordjs/voice": "^0.19.2",
     "colorette": "^2.0.20",
     "discord.js": "^14.17.3",
     "dotenv": "^16.4.7",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "opusscript": "^0.0.8",
+    "play-dl": "^1.9.7",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.13.5",

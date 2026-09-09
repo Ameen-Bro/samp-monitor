@@ -1,4 +1,4 @@
-import { Events, TextChannel } from 'discord.js';
+import { Events, TextChannel, ModalSubmitInteraction } from 'discord.js';
 import { config } from './config';
 import { initDatabase, closeDatabase } from './database/db';
 import { getDashboardConfig } from './database/dashboardConfig';
@@ -9,13 +9,24 @@ import { registerSlashCommands, handleSlashCommand } from './discord/commands';
 import { handleButtonInteraction } from './discord/buttons';
 import { buildDashboard } from './discord/dashboard';
 import { scheduleDailyReport } from './discord/dailyReport';
+import {
+  handleServerConfigModal,
+  SERVER_CONFIG_MODAL_ID,
+} from './discord/serverConfig';
+import {
+  handleOrgConfigModal,
+  handleOrgChannelsModal,
+  ORG_CONFIG_MODAL_ID,
+  ORG_CHANNELS_MODAL_ID,
+} from './discord/branding';
+import { handleTicketSubjectModal } from './discord/ticketCommands';
 import { logger } from './utils/logger';
 import { nowUtc } from './utils/time';
 
 async function bootstrap() {
-  logger.info('System', 'Starting SA-MP / Open.MP PD Officer Monitor...');
+  logger.info('System', '🚀 Starting SA-MP / Open.MP Activity Monitor...');
 
-  // 1. Initialize Database
+  // 1. Initialize Database & run migrations
   initDatabase();
 
   // 2. Wire up dashboard auto-update callback
@@ -31,10 +42,7 @@ async function bootstrap() {
       if (!message) return;
 
       const payload = buildDashboard(status, 1);
-      await message.edit({
-        embeds: payload.embeds,
-        components: payload.components,
-      });
+      await message.edit({ embeds: payload.embeds, components: payload.components });
       logger.debug('Dashboard', 'Auto-updated permanent dashboard message.');
     } catch (err) {
       logger.error('Dashboard', 'Failed to auto-update dashboard message', err);
@@ -43,13 +51,17 @@ async function bootstrap() {
 
   // 3. Discord Event Listeners
   discordClient.on(Events.ClientReady, async (client) => {
-    logger.info('Discord', `Logged in as ${client.user.tag}`);
+    logger.info('Discord', `✅ Logged in as ${client.user.tag}`);
 
-    // Register slash commands
+    // Register all slash commands
     await registerSlashCommands();
 
-    // Start automated background server query loop
-    tracker.startAutoCheck();
+    // Start auto-check ONLY if a server has been configured
+    if (tracker.isServerConfigured()) {
+      tracker.startAutoCheck();
+    } else {
+      logger.warn('System', '⚠️  No SA-MP server configured yet. Use /server-config set to configure one.');
+    }
 
     // Schedule daily automated reports
     scheduleDailyReport(client);
@@ -59,20 +71,28 @@ async function bootstrap() {
     try {
       if (interaction.isChatInputCommand()) {
         await handleSlashCommand(interaction);
-      } else if (interaction.isButton()) {
+        return;
+      }
+
+      if (interaction.isButton()) {
         await handleButtonInteraction(interaction);
+        return;
+      }
+
+      if (interaction.isModalSubmit()) {
+        await handleModalSubmit(interaction as ModalSubmitInteraction);
+        return;
       }
     } catch (err) {
       logger.error('Discord', 'Unhandled error in interaction handler', err);
     }
   });
 
-  // 4. Handle Process Signals for Graceful Shutdown
+  // 4. Graceful Shutdown
   const handleShutdown = (signal: string) => {
     logger.info('System', `Received ${signal}, initiating graceful shutdown...`);
     tracker.stopAutoCheck();
 
-    // Safely close open sessions
     try {
       const now = nowUtc();
       const openSessions = getAllActiveSessions();
@@ -94,8 +114,10 @@ async function bootstrap() {
 
   // 5. Connect to Discord
   if (!config.discordToken) {
-    logger.warn('Discord', 'No DISCORD_TOKEN provided in .env! Running SA-MP tracker in console mode.');
-    tracker.startAutoCheck();
+    logger.warn('Discord', 'No DISCORD_TOKEN provided. Running in console-only mode.');
+    if (tracker.isServerConfigured()) {
+      tracker.startAutoCheck();
+    }
     return;
   }
 
@@ -103,6 +125,40 @@ async function bootstrap() {
     await discordClient.login(config.discordToken);
   } catch (err) {
     logger.error('Discord', 'Failed to login to Discord. Check your DISCORD_TOKEN in .env', err);
+  }
+}
+
+// ─── Modal Submit Router ──────────────────────────────────────────────────────
+async function handleModalSubmit(interaction: ModalSubmitInteraction): Promise<void> {
+  const { customId } = interaction;
+
+  try {
+    if (customId === SERVER_CONFIG_MODAL_ID) {
+      await handleServerConfigModal(interaction);
+      return;
+    }
+
+    if (customId === ORG_CONFIG_MODAL_ID) {
+      await handleOrgConfigModal(interaction);
+      return;
+    }
+
+    if (customId === ORG_CHANNELS_MODAL_ID) {
+      await handleOrgChannelsModal(interaction);
+      return;
+    }
+
+    // Ticket subject modal: ticket_subject_modal_<categoryId>
+    if (customId.startsWith('ticket_subject_modal_')) {
+      const categoryId = customId.replace('ticket_subject_modal_', '');
+      await handleTicketSubjectModal(interaction, categoryId);
+      return;
+    }
+  } catch (err) {
+    logger.error('Modal', `Error handling modal ${customId}`, err);
+    if (!interaction.replied) {
+      await interaction.reply({ content: '❌ An error occurred.', ephemeral: true }).catch(() => {});
+    }
   }
 }
 

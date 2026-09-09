@@ -26,8 +26,10 @@ export const config: BotConfig = {
   discordClientId: process.env.DISCORD_CLIENT_ID || '',
   discordGuildId: process.env.DISCORD_GUILD_ID || undefined,
 
-  sampServerIp: process.env.SAMP_SERVER_IP || '139.99.52.211',
-  sampServerPort: parseInt(process.env.SAMP_SERVER_PORT || '7777', 10),
+  // Server IP/port are intentionally NOT stored here.
+  // They are loaded from the settings DB via src/database/settings.ts
+  sampServerIp: '',
+  sampServerPort: 0,
 
   timezone: process.env.TIMEZONE || 'Asia/Kolkata',
 

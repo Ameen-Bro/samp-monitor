@@ -1,19 +1,20 @@
-import { config } from '../config';
 import { querySampServer } from '../samp/query';
 import { SampServerStatus, ServerPlayer } from '../samp/types';
 import { getActiveOfficers, Officer } from '../database/officers';
 import { startSession, endSession, getActiveSession } from '../database/sessions';
 import { logQueryResult } from '../database/queryLogs';
+import { getServerConfig } from '../database/settings';
 import { normalizeName } from '../utils/normalizeName';
 import { logger } from '../utils/logger';
 import { nowUtc } from '../utils/time';
 import { reconcileOnRestart } from './recovery';
+import { config } from '../config';
 
 export type DashboardUpdateCallback = (status: SampServerStatus) => Promise<void>;
 
 export class SampTracker {
-  private ip: string;
-  private port: number;
+  private ip: string | null = null;
+  private port: number | null = null;
   private intervalSeconds: number;
   private missedThreshold: number;
 
@@ -26,15 +27,71 @@ export class SampTracker {
   private onUpdateCallbacks: DashboardUpdateCallback[] = [];
 
   constructor(
-    ip: string = config.sampServerIp,
-    port: number = config.sampServerPort,
+    ip?: string | null,
+    port?: number | null,
     intervalSeconds: number = config.queryIntervalSeconds,
     missedThreshold: number = config.missedQueryThreshold
   ) {
-    this.ip = ip;
-    this.port = port;
     this.intervalSeconds = intervalSeconds;
     this.missedThreshold = missedThreshold;
+    if (ip && port) {
+      this.ip = ip;
+      this.port = port;
+    } else {
+      this.loadServerFromDb();
+    }
+  }
+
+  /**
+   * Reloads server IP/port from the settings database.
+   */
+  public loadServerFromDb(): boolean {
+    const serverConfig = getServerConfig();
+    if (serverConfig.ip && serverConfig.port && serverConfig.monitoringEnabled) {
+      this.ip = serverConfig.ip;
+      this.port = serverConfig.port;
+      if (serverConfig.queryInterval > 0) {
+        this.intervalSeconds = serverConfig.queryInterval;
+      }
+      logger.info('Tracker', `Server loaded from DB: ${this.ip}:${this.port}`);
+      return true;
+    }
+    this.ip = null;
+    this.port = null;
+    return false;
+  }
+
+  /**
+   * Updates the server at runtime (e.g., after admin sets a new server via /server-config).
+   */
+  public updateServer(ip: string, port: number, intervalSeconds?: number): void {
+    const wasRunning = !!this.checkTimer;
+    this.stopAutoCheck();
+    this.ip = ip;
+    this.port = port;
+    if (intervalSeconds) this.intervalSeconds = intervalSeconds;
+    this.isInitialCheck = true;
+    this.consecutiveFailures = 0;
+    this.lastStatus = null;
+    if (wasRunning) {
+      this.startAutoCheck();
+    }
+    logger.info('Tracker', `Server updated to ${ip}:${port}`);
+  }
+
+  /**
+   * Clears the server config (monitoring disabled).
+   */
+  public clearServer(): void {
+    this.stopAutoCheck();
+    this.ip = null;
+    this.port = null;
+    this.lastStatus = null;
+    logger.info('Tracker', 'Server config cleared. Monitoring disabled.');
+  }
+
+  public isServerConfigured(): boolean {
+    return this.ip !== null && this.port !== null;
   }
 
   public registerUpdateCallback(cb: DashboardUpdateCallback): void {
@@ -49,10 +106,30 @@ export class SampTracker {
     return this.consecutiveFailures;
   }
 
+  public getCurrentServer(): { ip: string | null; port: number | null } {
+    return { ip: this.ip, port: this.port };
+  }
+
   /**
    * Executes a server check, reconciles officer sessions, and triggers updates.
    */
   public async checkNow(): Promise<SampServerStatus> {
+    if (!this.ip || !this.port) {
+      const unconfiguredStatus: SampServerStatus = {
+        online: false,
+        ip: 'not-configured',
+        port: 0,
+        latencyMs: -1,
+        players: [],
+        lastQueriedAt: new Date(),
+        error: 'No server configured. Use /server-config to set a server.',
+      };
+      for (const cb of this.onUpdateCallbacks) {
+        try { await cb(unconfiguredStatus); } catch { /* ignore */ }
+      }
+      return unconfiguredStatus;
+    }
+
     if (this.isChecking) {
       logger.warn('Tracker', 'Check already in progress, skipping concurrent trigger.');
       return this.lastStatus || {
@@ -79,7 +156,6 @@ export class SampTracker {
         this.handleFailedQuery(status);
       }
 
-      // Notify dashboard update callbacks
       for (const cb of this.onUpdateCallbacks) {
         try {
           await cb(status);
@@ -116,10 +192,10 @@ export class SampTracker {
       const activeSession = getActiveSession(officer.id);
 
       if (isOnline && !activeSession) {
-        logger.info('Tracker', `Officer ${officer.ig_name} detected ONLINE. Starting session.`);
+        logger.info('Tracker', `${officer.ig_name} detected ONLINE. Starting session.`);
         startSession(officer.id, now);
       } else if (!isOnline && activeSession) {
-        logger.info('Tracker', `Officer ${officer.ig_name} detected OFFLINE. Ending session.`);
+        logger.info('Tracker', `${officer.ig_name} detected OFFLINE. Ending session.`);
         endSession(officer.id, 'DISCONNECTED', now);
       }
     }
@@ -132,7 +208,6 @@ export class SampTracker {
       `Server query failed (${this.consecutiveFailures}/${this.missedThreshold}): ${status.error || 'Timeout'}`
     );
 
-    // Only mark offline if failures reach the missed threshold
     if (this.consecutiveFailures >= this.missedThreshold) {
       logger.error('Tracker', `Missed query threshold reached (${this.consecutiveFailures}). Ending active sessions.`);
       const activeOfficers = getActiveOfficers();
@@ -151,8 +226,14 @@ export class SampTracker {
 
   /**
    * Starts the periodic automatic background check.
+   * Only starts if a server is configured.
    */
   public startAutoCheck(): void {
+    if (!this.isServerConfigured()) {
+      logger.warn('Tracker', 'No server configured — auto-check not started. Use /server-config to configure a server.');
+      return;
+    }
+
     if (this.checkTimer) {
       clearInterval(this.checkTimer);
     }
